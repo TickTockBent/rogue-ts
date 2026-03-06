@@ -296,13 +296,13 @@ export async function killed(tp: Monster, pr: boolean): Promise<void> {
   await check_level();
 
   // Remove monster from the map
-  remove_mon(tp.t_pos, tp, true);
+  await remove_mon(tp.t_pos, tp, true);
 }
 
 /**
  * remove_mon: Remove a monster from the level.
  */
-export function remove_mon(mp: Coord, tp: Monster, wasKill: boolean): void {
+export async function remove_mon(mp: Coord, tp: Monster, wasKill: boolean): Promise<void> {
   const backend = getBackend();
 
   // Detach from monster list
@@ -319,7 +319,28 @@ export function remove_mon(mp: Coord, tp: Monster, wasKill: boolean): void {
   }
 
   // Drop any items the monster was carrying
-  // (simplified — full drop logic in Phase 7)
+  if (tp.t_pack !== null) {
+    const { _attach: attachItem } = await import("./list.js");
+    const { setCh: setChAt, flat: flatAt, setFlat: setFlatAt, F_DROPPED: fDropped } = await import("./globals.js");
+    let item: Thing | null = tp.t_pack;
+    while (item !== null) {
+      const next: Thing | null = item.l_next;
+      item.l_next = null;
+      item.l_prev = null;
+      if (item._kind === "object") {
+        item.o_pos.y = mp.y;
+        item.o_pos.x = mp.x;
+        const typeCh = String.fromCharCode(item.o_type);
+        const listHead = { head: state.lvl_obj };
+        attachItem(listHead, item);
+        state.lvl_obj = listHead.head;
+        setChAt(mp.y, mp.x, typeCh);
+        setFlatAt(mp.y, mp.x, flatAt(mp.y, mp.x) | fDropped);
+      }
+      item = next;
+    }
+    tp.t_pack = null;
+  }
 }
 
 function rollDice(number: number, sides: number): number {

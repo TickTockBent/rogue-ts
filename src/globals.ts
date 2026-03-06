@@ -747,6 +747,7 @@ export const state = {
   jump: false,
   kamikaze: false,
   lower_msg: false,
+  move_no_pickup: false,
   move_on: false,
   msg_esc: false,
   passgo: false,
