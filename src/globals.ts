@@ -855,6 +855,7 @@ export const state = {
 
   // Internal game loop flags
   _newLevel: false,
+  _saveData: null as string | null,
 };
 
 // ─── Place accessor functions (matching C macros) ────
@@ -1038,4 +1039,5 @@ export function resetState(): void {
 
   state._result = null;
   state._newLevel = false;
+  state._saveData = null;
 }

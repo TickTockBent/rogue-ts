@@ -19,4 +19,4 @@ export {
 export type { RogueOptions, RogueResult, Coord, Stats } from "./types.js";
 export { RogueExit } from "./types.js";
 
-export { startRogue } from "./main.js";
+export { startRogue, resumeRogue, saveGame } from "./main.js";

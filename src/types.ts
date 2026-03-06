@@ -119,8 +119,9 @@ export interface RogueOptions {
 }
 
 export interface RogueResult {
-  outcome: "death" | "quit" | "victory";
+  outcome: "death" | "quit" | "victory" | "save";
   gold: number;
   level: number;
   killer?: string;
+  saveData?: string;
 }

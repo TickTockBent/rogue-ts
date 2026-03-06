@@ -379,6 +379,20 @@ export async function command(): Promise<boolean> {
       await set_options();
       break;
 
+    case "S":
+      // Save game
+      state.after = false;
+      {
+        const { saveGame } = await import("./save.js");
+        const saveData = saveGame();
+        state._saveData = saveData;
+        await msg("game saved");
+        // Signal the game loop to exit cleanly
+        state.playing = false;
+        const { RogueExit } = await import("./types.js");
+        throw new RogueExit(0);
+      }
+
     case "Q":
       // Quit
       state.after = false;
