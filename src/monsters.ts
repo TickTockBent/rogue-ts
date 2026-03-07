@@ -10,7 +10,7 @@ import {
   ISWEARING, R_STEALTH, ISLEVIT, R_AGGR, R_PROTECT,
   LAMPDIST, ISDARK,
   POTION, SCROLL, RING, STICK, FOOD, WEAPON, ARMOR, STAIRS, GOLD, AMULET,
-  VS_MAGIC,
+  VS_MAGIC, HUHDURATION, AFTER,
   moat, setMoat, INDEX,
 } from "./globals.js";
 import { rnd, roll } from "./util.js";
@@ -21,7 +21,8 @@ import { getBackend } from "./io.js";
 
 // Monster vorpalness order
 const lvl_mons = "KEBSHIROZLCQANYFTWPXUMVGJD";
-const wand_mons = "KEBSH\0ROZL\0CQA\0Y\0TWP\0UMVGJ\0";
+// C original: excludes I(5), C(10), N(13), F(15), X(19) from wandering
+const wand_mons = "KEBSH\x00ROZL\x00QA\x00Y\x00TWP\x00UMVGJD";
 
 /**
  * randmonster: Pick a monster to show up.
@@ -181,7 +182,7 @@ export function runto(runner: Coord): void {
  * wake_monster: What to do when the hero steps next to a monster.
  * Simplified for Phase 4 — full implementation in Phase 6.
  */
-export function wake_monster(y: number, x: number): Thing | null {
+export async function wake_monster(y: number, x: number): Promise<Thing | null> {
   const tp = moat(y, x);
   if (tp === null || tp._kind !== "monster") return null;
 
@@ -207,6 +208,19 @@ export function wake_monster(y: number, x: number): Thing | null {
     } else {
       tp.t_dest = state.player.t_pos;
     }
+  }
+
+  // C original: Medusa gaze confuses player on sight
+  if (tp.t_type === "M" && !(state.player.t_flags & ISBLIND) &&
+      !(state.player.t_flags & ISHUH) && !(tp.t_flags & ISCANC) &&
+      !save(VS_MAGIC)) {
+    state.player.t_flags |= ISHUH;
+    const { spread } = await import("./util.js");
+    const { fuse } = await import("./daemon.js");
+    const { unconfuse } = await import("./daemons.js");
+    const { msg: msgFn } = await import("./io.js");
+    fuse(unconfuse, 0, spread(HUHDURATION), AFTER);
+    await msgFn("the gaze of the medusa has confused you");
   }
 
   return tp;

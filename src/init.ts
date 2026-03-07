@@ -15,11 +15,12 @@ import {
 import { rnd } from "./util.js";
 import { new_item } from "./list.js";
 import { init_weapon } from "./weapons.js";
+import { add_pack } from "./pack.js";
 
 /**
  * init_player: Roll up the player with starting equipment.
  */
-export function init_player(): void {
+export async function init_player(): Promise<void> {
   // Set starting stats (already initialized in state.player via INIT_STATS)
   state.player.t_stats = { ...state.max_stats };
   state.food_left = HUNGERTIME;
@@ -28,7 +29,7 @@ export function init_player(): void {
   const foodObj = new_item();
   foodObj.o_type = FOOD.charCodeAt(0);
   foodObj.o_count = 1;
-  add_to_player_pack(foodObj);
+  await add_pack(foodObj, true);
 
   // Give ring mail armor
   const armorObj = new_item();
@@ -38,7 +39,7 @@ export function init_player(): void {
   armorObj.o_flags |= ISKNOW;
   armorObj.o_count = 1;
   state.cur_armor = armorObj;
-  add_to_player_pack(armorObj);
+  await add_pack(armorObj, true);
 
   // Give a +1,+1 mace
   const maceObj = new_item();
@@ -46,7 +47,7 @@ export function init_player(): void {
   maceObj.o_hplus = 1;
   maceObj.o_dplus = 1;
   maceObj.o_flags |= ISKNOW;
-  add_to_player_pack(maceObj);
+  await add_pack(maceObj, true);
   state.cur_weapon = maceObj;
 
   // Give a +1 bow
@@ -54,36 +55,24 @@ export function init_player(): void {
   init_weapon(bowObj, BOW);
   bowObj.o_hplus = 1;
   bowObj.o_flags |= ISKNOW;
-  add_to_player_pack(bowObj);
+  await add_pack(bowObj, true);
 
   // Give 25-40 arrows
   const arrowObj = new_item();
   init_weapon(arrowObj, ARROW);
   arrowObj.o_count = rnd(15) + 25;
   arrowObj.o_flags |= ISKNOW;
-  add_to_player_pack(arrowObj);
+  await add_pack(arrowObj, true);
 }
 
+
 /**
- * Simple add-to-pack for initialization.
- * The full add_pack() in pack.ts handles more complex logic.
+ * pick_color: Return a random displayable character for hallucination.
+ * C original: picks from a set of item/monster display chars.
  */
-function add_to_player_pack(obj: import("./types.js").GameObj): void {
-  // Assign pack letter
-  for (let i = 0; i < 26; i++) {
-    if (!state.pack_used[i]) {
-      obj.o_packch = String.fromCharCode("a".charCodeAt(0) + i);
-      state.pack_used[i] = true;
-      break;
-    }
-  }
-  // Add to head of player's pack list
-  obj.l_next = state.player.t_pack;
-  if (state.player.t_pack !== null) {
-    state.player.t_pack.l_prev = obj;
-  }
-  state.player.t_pack = obj;
-  state.inpack++;
+const halluChars = "!?])=/,:*" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+export function pick_color(): string {
+  return halluChars[rnd(halluChars.length)];
 }
 
 /**

@@ -122,9 +122,20 @@ export function new_thing(): GameObj {
  */
 export function fix_stick(cur: GameObj): void {
   cur.o_type = STICK.charCodeAt(0);
-  cur.o_damage = "1x1";
-  cur.o_hurldmg = "1x1";
-  cur.o_arm = 3 + rnd(5); // charges
+  // Differentiate wand (1x1) vs staff (2x3) damage
+  if (state.ws_type[cur.o_which] === "staff") {
+    cur.o_damage = "2x3";
+    cur.o_hurldmg = "1x1";
+  } else {
+    cur.o_damage = "1x1";
+    cur.o_hurldmg = "1x1";
+  }
+  // WS_LIGHT gets 10-19 charges; others get 3-7
+  if (cur.o_which === 0) { // WS_LIGHT
+    cur.o_arm = rnd(10) + 10;
+  } else {
+    cur.o_arm = rnd(5) + 3;
+  }
   cur.o_flags = 0;
 }
 
@@ -139,12 +150,22 @@ export function inv_name(obj: GameObj, drop: boolean): string {
   switch (String.fromCharCode(obj.o_type)) {
     case POTION: {
       const info = pot_info[which];
-      if (info.oi_know) {
-        result = `A potion of ${info.oi_name}`;
-      } else if (info.oi_guess) {
-        result = `A ${state.p_colors[which]} potion called ${info.oi_guess}`;
+      if (obj.o_count === 1) {
+        if (info.oi_know) {
+          result = `A potion of ${info.oi_name}`;
+        } else if (info.oi_guess) {
+          result = `A ${state.p_colors[which]} potion called ${info.oi_guess}`;
+        } else {
+          result = `A ${state.p_colors[which]} potion`;
+        }
       } else {
-        result = `A ${state.p_colors[which]} potion`;
+        if (info.oi_know) {
+          result = `${obj.o_count} potions of ${info.oi_name}`;
+        } else if (info.oi_guess) {
+          result = `${obj.o_count} ${state.p_colors[which]} potions called ${info.oi_guess}`;
+        } else {
+          result = `${obj.o_count} ${state.p_colors[which]} potions`;
+        }
       }
       break;
     }
@@ -204,7 +225,15 @@ export function inv_name(obj: GameObj, drop: boolean): string {
     case RING: {
       const info = ring_info[which];
       if (info.oi_know) {
-        result = `A ring of ${info.oi_name}`;
+        // Show ring bonus for rings that have a numeric value
+        const hasNum = which === R_PROTECT || which === R_ADDSTR ||
+                       which === R_ADDHIT || which === R_ADDDAM;
+        if (hasNum && (obj.o_flags & ISKNOW)) {
+          const sign = obj.o_arm >= 0 ? "+" : "";
+          result = `A ${sign}${obj.o_arm} ring of ${info.oi_name}`;
+        } else {
+          result = `A ring of ${info.oi_name}`;
+        }
       } else if (info.oi_guess) {
         result = `A ${state.r_stones[which]} ring called ${info.oi_guess}`;
       } else {
@@ -218,6 +247,9 @@ export function inv_name(obj: GameObj, drop: boolean): string {
       const stickMade = state.ws_made[which] || "wooden";
       if (info.oi_know) {
         result = `A ${stickType} of ${info.oi_name}`;
+        if (obj.o_flags & ISKNOW) {
+          result += ` [${obj.o_arm} charges]`;
+        }
       } else if (info.oi_guess) {
         result = `A ${stickMade} ${stickType} called ${info.oi_guess}`;
       } else {

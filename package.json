@@ -14,7 +14,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TickTockBent/rogue-ts.git"

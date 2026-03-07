@@ -9,7 +9,8 @@ import type { Coord } from "./types.js";
 import {
   state, ESCAPE, NUMLINES, NUMCOLS,
   STAIRS, AMULET, AMULETLEVEL,
-  ISHUH, ISHALU, ISBLIND, ISTARGET,
+  ISHUH, ISHALU, ISBLIND, ISTARGET, ISLEVIT, ISHASTE,
+  ISWEARING, R_SEARCH, R_TELEPORT,
   FLOOR, PASSAGE, DOOR, TRAP,
   POTION, SCROLL, WEAPON, ARMOR, RING, STICK,
   CALLABLE,
@@ -104,7 +105,17 @@ export async function command(): Promise<boolean> {
   }
 
   // Read the command
-  const ch = await readchar();
+  let ch = await readchar();
+
+  // C original: numeric prefix — read digits to build a count
+  if (ch >= "0" && ch <= "9") {
+    state.count = 0;
+    while (ch >= "0" && ch <= "9") {
+      state.count = state.count * 10 + (ch.charCodeAt(0) - "0".charCodeAt(0));
+      ch = await readchar();
+    }
+    state.count--;
+  }
 
   // Check for movement
   if (dirMap[ch]) {
@@ -448,6 +459,26 @@ export async function command(): Promise<boolean> {
       break;
   }
 
+  // C original: ring of searching auto-searches each turn
+  if (state.after && ISWEARING(R_SEARCH)) {
+    await search();
+  }
+
+  // C original: ring of teleportation randomly teleports
+  if (state.after && ISWEARING(R_TELEPORT) && rnd(50) === 0) {
+    const { find_floor, roomin } = await import("./rooms.js");
+    const { floor_at } = await import("./misc.js");
+    const heroPos = state.player.t_pos;
+    const newPos = { y: 0, x: 0 };
+    find_floor(null, newPos, false, true);
+    const backend = getBackend();
+    backend.mvaddch(heroPos.y, heroPos.x, floor_at().charCodeAt(0));
+    heroPos.y = newPos.y;
+    heroPos.x = newPos.x;
+    state.player.t_room = roomin(heroPos);
+    await msg("teleport!");
+  }
+
   return state.after;
 }
 
@@ -468,17 +499,16 @@ async function search(): Promise<void> {
   const backend = getBackend();
   const heroPos = state.player.t_pos;
 
-  // Confused search might not work
-  if (state.player.t_flags & ISHUH) {
-    return;
-  }
-
+  // C original: confused search has probability of failure per cell, not total failure
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
       if (dy === 0 && dx === 0) continue;
       const ny = heroPos.y + dy;
       const nx = heroPos.x + dx;
       if (ny <= 0 || ny >= NUMLINES - 1 || nx < 0 || nx >= NUMCOLS) continue;
+
+      // Confused: each cell has a chance to fail
+      if ((state.player.t_flags & ISHUH) && rnd(5) !== 0) continue;
 
       const pp = INDEX(ny, nx);
       if (!(pp.p_flags & F_REAL)) {
@@ -509,10 +539,14 @@ async function goDownStairs(): Promise<void> {
     return;
   }
 
+  // C original: levit_check — levitating players can't use stairs
+  if (levit_check()) return;
+
   state.level++;
   state.seenstairs = false;
-  // new_level will be called by the game loop
   state._newLevel = true;
+  // C original: stairs don't give monsters a free turn
+  state.after = false;
 }
 
 /**
@@ -533,6 +567,9 @@ async function goUpStairs(): Promise<void> {
     return;
   }
 
+  // C original: levit_check — levitating players can't use stairs
+  if (levit_check()) return;
+
   state.level--;
   if (state.level <= 0) {
     const { total_winner } = await import("./rip.js");
@@ -540,6 +577,7 @@ async function goUpStairs(): Promise<void> {
     return;
   }
   state._newLevel = true;
+  state.after = false;
 }
 
 /**
@@ -793,4 +831,15 @@ async function set_options(): Promise<void> {
     backend.clearok(state.stdscr, true);
   }
   backend.refresh();
+}
+
+/**
+ * levit_check: Check if the player is levitating and can't use stairs.
+ * Returns true if the player is levitating (action blocked).
+ */
+function levit_check(): boolean {
+  if (state.player.t_flags & ISLEVIT) {
+    return true;
+  }
+  return false;
 }

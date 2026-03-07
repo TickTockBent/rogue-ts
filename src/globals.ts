@@ -87,6 +87,8 @@ export const LEFT = 0;
 export const RIGHT = 1;
 export const BOLT_LENGTH = 6;
 export const LAMPDIST = 3;
+export const SLEEPTIME = 4;
+export const BEARTIME = 3;
 
 // ─── Save against things ─────────────────────────────
 
@@ -259,6 +261,8 @@ export const MAXSTICKS = 14;
 
 // ─── Daemon system ───────────────────────────────────
 
+export const BEFORE = 1;
+export const AFTER = 2;
 export const MAXDAEMONS = 20;
 
 // ─── Data Tables ─────────────────────────────────────

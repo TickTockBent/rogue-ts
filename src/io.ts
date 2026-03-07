@@ -36,6 +36,11 @@ export async function msg(fmt: string, ...args: unknown[]): Promise<number> {
     state.mpos = 0;
     return ~ESCAPE;
   }
+  // If previous doadd set overflow flag, flush first
+  if (needFlush) {
+    needFlush = false;
+    await endmsg();
+  }
   doadd(fmt, args);
   return await endmsg();
 }
@@ -57,8 +62,13 @@ export async function endmsg(): Promise<number> {
 
   if (state.mpos > 0) {
     // There's already a message on screen — show --More-- and wait
-    // Note: in the original, look(FALSE) is called here.
-    // We'll stub it for now and wire it in Phase 4+
+    // Call look(FALSE) before showing --More-- per C original
+    try {
+      const { look } = await import("./misc.js");
+      await look(false);
+    } catch {
+      // During init, misc.js may not be ready yet — skip
+    }
     backend.mvaddstr(0, state.mpos, "--More--");
     backend.refresh();
 
@@ -96,15 +106,16 @@ export async function endmsg(): Promise<number> {
 
 /**
  * doadd: Perform a sprintf and append to message buffer.
+ * In the C original, if the buffer would overflow the screen width,
+ * endmsg() is called to flush with --More--. Since endmsg is async
+ * and doadd is sync, we set a flag for msg() to handle the flush.
  */
+let needFlush = false;
+
 function doadd(fmt: string, args: unknown[]): void {
   const buf = sprintf(fmt, ...args);
   if (buf.length + newpos >= MAXMSG) {
-    // Message would overflow — flush what we have first
-    // Note: endmsg is async, but doadd is sync in the original.
-    // In practice, we handle this by checking overflow before the call.
-    // For safety, we truncate here. The async endmsg() call happens
-    // from msg() which does the await.
+    needFlush = true;
   }
   msgbuf += buf;
   newpos = msgbuf.length;

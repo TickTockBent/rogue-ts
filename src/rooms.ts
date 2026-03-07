@@ -15,8 +15,9 @@ import {
 } from "./globals.js";
 import { rnd } from "./util.js";
 import { step_ok, getBackend } from "./io.js";
-import { new_item } from "./list.js";
+import { new_item, new_monster_thing } from "./list.js";
 import { _attach } from "./list.js";
+import { new_monster, randmonster } from "./monsters.js";
 
 const GOLDGRP = 1;
 
@@ -156,8 +157,13 @@ export function do_rooms(): void {
       state.lvl_obj = listHead.head;
     }
 
-    // Monster placement is deferred to Phase 4+
-    // In the original: if (rnd(100) < (rp.r_goldval > 0 ? 80 : 25)) ...
+    // Spawn monsters in rooms
+    if (rnd(100) < (rp.r_goldval > 0 ? 80 : 25)) {
+      const monsterCoord: Coord = { y: 0, x: 0 };
+      find_floor(rp, monsterCoord, false, true);
+      const monsterThing = new_monster_thing();
+      new_monster(monsterThing, randmonster(false), monsterCoord);
+    }
   }
 }
 
@@ -377,8 +383,12 @@ export function enter_room(cp: Coord): void {
           }
         } else if (tp._kind === "monster") {
           tp.t_oldch = ch;
-          // Simplified: just show the character or disguise
-          backend.addch(tp.t_disguise.charCodeAt(0));
+          // C original: show monster if visible or SEEMONST active
+          if (state.player.t_flags & SEEMONST) {
+            backend.addch(tp.t_type.charCodeAt(0));
+          } else {
+            backend.addch(tp.t_disguise.charCodeAt(0));
+          }
         }
       }
     }
@@ -454,23 +464,23 @@ export function door_open(rp: Room): void {
  * roomin: Find what room a coordinate is in.
  */
 export function roomin(cp: Coord): Room | null {
-  for (const rp of state.rooms) {
-    if (
-      cp.x >= rp.r_pos.x &&
-      cp.x < rp.r_pos.x + rp.r_max.x &&
-      cp.y >= rp.r_pos.y &&
-      cp.y < rp.r_pos.y + rp.r_max.y
-    ) {
-      return rp;
-    }
-  }
-
-  // Check passages
+  // Fast path: check F_PASS flag first (passages)
   const flags = flat(cp.y, cp.x);
   if (flags & F_PASS) {
     const passNum = flags & F_PNUM;
     if (passNum < state.passages.length) {
       return state.passages[passNum];
+    }
+  }
+
+  for (const rp of state.rooms) {
+    if (
+      cp.x >= rp.r_pos.x &&
+      cp.x <= rp.r_pos.x + rp.r_max.x &&
+      cp.y >= rp.r_pos.y &&
+      cp.y <= rp.r_pos.y + rp.r_max.y
+    ) {
+      return rp;
     }
   }
 

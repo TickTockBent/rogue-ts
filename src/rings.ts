@@ -10,7 +10,7 @@ import {
   R_ADDSTR, R_PROTECT, R_ADDHIT, R_ADDDAM,
   R_AGGR, R_TELEPORT, R_SEEINVIS, R_SUSTSTR,
   R_SEARCH, R_STEALTH, R_NOP, R_REGEN, R_DIGEST, R_SUSTARM,
-  ISCURSED, ISKNOW,
+  ISCURSED, ISKNOW, CANSEE, ISINVIS,
   LEFT, RIGHT, ESCAPE,
 } from "./globals.js";
 import { msg, readchar } from "./io.js";
@@ -79,8 +79,23 @@ export async function ring_on(): Promise<void> {
       chg_str(obj.o_arm);
       break;
     case R_SEEINVIS:
+      state.player.t_flags |= CANSEE;
       // Show invisible monsters
-      state.player.t_flags &= ~0; // placeholder — full see_monst update deferred
+      {
+        const { getBackend } = await import("./io.js");
+        const { see_monst } = await import("./misc.js");
+        const backend = getBackend();
+        let monsterItem = state.mlist;
+        while (monsterItem !== null) {
+          if (monsterItem._kind === "monster" && (monsterItem.t_flags & ISINVIS)) {
+            if (see_monst(monsterItem)) {
+              backend.mvaddch(monsterItem.t_pos.y, monsterItem.t_pos.x,
+                monsterItem.t_type.charCodeAt(0));
+            }
+          }
+          monsterItem = monsterItem.l_next;
+        }
+      }
       break;
     case R_AGGR:
       {
@@ -152,7 +167,14 @@ export async function ring_off(): Promise<void> {
       chg_str(-ring.o_arm);
       break;
     case R_SEEINVIS:
-      // Invisible monsters become invisible again
+      // Clear CANSEE only if the other ring isn't also see-invisible
+      {
+        const otherHand = hand === 0 ? 1 : 0;
+        const otherRing = state.cur_ring[otherHand];
+        if (otherRing === null || otherRing._kind !== "object" || otherRing.o_which !== R_SEEINVIS) {
+          state.player.t_flags &= ~CANSEE;
+        }
+      }
       break;
   }
 

@@ -48,7 +48,7 @@ export function sign(nm: number): number {
 }
 
 export function spread(nm: number): number {
-  return nm - nm + rnd(2 * nm + 1);
+  return nm - Math.floor(nm / 20) + rnd(Math.floor(nm / 10));
 }
 
 // --- Macro functions from rogue.h ---

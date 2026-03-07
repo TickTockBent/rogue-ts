@@ -9,7 +9,7 @@ import {
   WEAPON, BOW, MAXWEAPONS,
   ISMISL, ISMANY, ISKNOW, ISCURSED,
   NUMLINES, NUMCOLS,
-  FLOOR, PASSAGE,
+  FLOOR, PASSAGE, DOOR,
   weap_info,
   setCh, moat, chat,
   F_DROPPED, flat, setFlat,
@@ -163,7 +163,7 @@ function do_motion(obj: GameObj, dy: number, dx: number): void {
 
     const ch = winatForMissile(newY, newX);
 
-    // Stop on walls, monsters
+    // Stop on walls and monsters
     if (!step_ok(ch) && ch !== PASSAGE) break;
     if (ch >= "A" && ch <= "Z") {
       obj.o_pos.y = newY;
@@ -176,6 +176,9 @@ function do_motion(obj: GameObj, dy: number, dx: number): void {
 
     // Check for monster
     if (moat(newY, newX) !== null) break;
+
+    // C original: missiles stop at doors
+    if (ch === DOOR) break;
   }
 }
 

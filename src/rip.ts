@@ -19,7 +19,9 @@ import { inv_name } from "./things.js";
 const killNames: Record<string, string> = {
   s: "starvation",
   a: "arrow",
+  b: "bolt",
   d: "dart",
+  f: "flame",
 };
 
 // ASCII tombstone art — ported from rip.c
@@ -107,9 +109,10 @@ export async function death(monType: string): Promise<never> {
     await draw_tombstone(killer);
   }
 
+  // C original: death penalty — purse halved
   const result: RogueResult = {
     outcome: "death",
-    gold: state.purse,
+    gold: Math.floor(state.purse / 2),
     level: state.level,
     killer,
   };
@@ -157,13 +160,23 @@ function item_worth(obj: GameObj): number {
     case FOOD:
       worth = 2;
       break;
-    case WEAPON:
-      worth = (weap_info[obj.o_which]?.oi_worth || 0);
-      worth += (obj.o_hplus + obj.o_dplus) * 100;
+    case WEAPON: {
+      // C original: worth = base * (3*(hplus+dplus) + count)
+      const base = weap_info[obj.o_which]?.oi_worth || 0;
+      const enchant = 3 * (obj.o_hplus + obj.o_dplus);
+      worth = base * (enchant > 0 ? enchant + obj.o_count : obj.o_count);
+      return Math.max(0, worth);
+    }
+    case ARMOR: {
+      // C original: worth = base + enchant bonus
+      const aBase = arm_info[obj.o_which]?.oi_worth || 0;
+      // arm_info[].a_class gives the base AC; lower o_arm = better = more valuable
+      const aClass = arm_info[obj.o_which]?.oi_prob || 0; // placeholder
+      // Enchantment: difference from base AC
+      const enchant = (arm_info[obj.o_which]?.oi_prob || 0) - obj.o_arm;
+      worth = aBase + enchant * 100;
       break;
-    case ARMOR:
-      worth = (arm_info[obj.o_which]?.oi_worth || 0);
-      break;
+    }
     case RING:
       worth = (ring_info[obj.o_which]?.oi_worth || 0);
       if (obj.o_arm > 0) worth += obj.o_arm * 100;

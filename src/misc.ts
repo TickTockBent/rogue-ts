@@ -9,19 +9,21 @@ import {
   FLOOR, PASSAGE, DOOR, PLAYER, TRAP, STAIRS, GOLD,
   POTION, SCROLL, FOOD, WEAPON, ARMOR, RING, STICK, AMULET,
   ISDARK, ISGONE, ISMAZE,
-  ISBLIND, ISINVIS, ISHALU, ISFOUND, SEEMONST, ISRUN,
+  ISBLIND, ISINVIS, ISHALU, ISFOUND, SEEMONST, ISRUN, CANSEE,
   F_PASS, F_SEEN, F_REAL, F_PNUM,
   INDEX, chat, setCh, flat, setFlat, moat, winat,
   e_levels, monsters as monsterTemplates,
 } from "./globals.js";
 import { rnd, sign, ce } from "./util.js";
-import { getBackend } from "./io.js";
+import { getBackend, step_ok } from "./io.js";
 import { msg } from "./io.js";
 import { roomin } from "./rooms.js";
 import { dist } from "./monsters.js";
 
 /**
- * look: A special function, only used for detecting things around the hero.
+ * look: Examine the surroundings and update the display.
+ * C original: scans 3x3 area around hero, handles dark rooms,
+ * hallucination, wake_monster, SEEMONST, and lamp area.
  */
 export async function look(wakeup: boolean): Promise<void> {
   const backend = getBackend();
@@ -29,6 +31,27 @@ export async function look(wakeup: boolean): Promise<void> {
   const playerRoom = state.player.t_room;
 
   const isBlind = !!(state.player.t_flags & ISBLIND);
+  const isHallucinating = !!(state.player.t_flags & ISHALU);
+  const isDarkRoom = playerRoom !== null && !!(playerRoom.r_flags & ISDARK) &&
+                     !(playerRoom.r_flags & ISGONE);
+
+  // Erase old lamp area in dark rooms (erase_lamp equivalent)
+  // If we moved in a dark room, erase the 3x3 area around our old position
+  if (isDarkRoom && !isBlind &&
+      (state.oldpos.y !== heroPos.y || state.oldpos.x !== heroPos.x)) {
+    for (let ody = -1; ody <= 1; ody++) {
+      for (let odx = -1; odx <= 1; odx++) {
+        const oy = state.oldpos.y + ody;
+        const ox = state.oldpos.x + odx;
+        if (oy < 0 || oy >= NUMLINES || ox < 0 || ox >= NUMCOLS) continue;
+        const pp = INDEX(oy, ox);
+        if (pp.p_ch === FLOOR) {
+          // Only erase floor tiles (walls, doors stay visible)
+          backend.mvaddch(oy, ox, " ".charCodeAt(0));
+        }
+      }
+    }
+  }
 
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
@@ -42,43 +65,69 @@ export async function look(wakeup: boolean): Promise<void> {
         continue;
       }
 
-      const pp = INDEX(y, x);
-      const ch = pp.p_ch;
-      const oldScreenChar = String.fromCharCode(backend.mvinch(y, x) & 0xff);
-
-      if (dy === 0 && dx === 0) {
-        // The hero's own position
-        continue;
-      }
+      if (dy === 0 && dx === 0) continue;
 
       if (isBlind) continue;
 
-      const monster = pp.p_monst;
+      const pp = INDEX(y, x);
+      const ch = pp.p_ch;
+      const monster = moat(y, x);
+
+      // Handle floor visibility in dark rooms — only show within lamp distance
+      if (isDarkRoom && ch === FLOOR) {
+        if (dist(y, x, heroPos.y, heroPos.x) > LAMPDIST) {
+          continue;
+        }
+      }
+
+      // Wake up monsters when the hero steps near them
+      if (wakeup && monster !== null && monster._kind === "monster") {
+        const { wake_monster } = await import("./monsters.js");
+        await wake_monster(y, x);
+      }
 
       // Determine what to show
       let showCh = ch;
       if (monster !== null && monster._kind === "monster") {
         if (see_monst(monster)) {
-          showCh = monster.t_disguise;
+          showCh = isHallucinating ? pick_color() : monster.t_disguise;
         } else if (state.player.t_flags & SEEMONST) {
           showCh = monster.t_type;
         } else {
           showCh = ch;
         }
+      } else if (isHallucinating && isItemChar(ch)) {
+        showCh = pick_color();
       }
 
-      // Handle floor visibility in dark rooms
-      if (ch === FLOOR && playerRoom !== null && (playerRoom.r_flags & ISDARK) && !isBlind) {
-        if (dist(y, x, heroPos.y, heroPos.x) > LAMPDIST * LAMPDIST) {
-          continue;
-        }
+      // Handle traps: only show if F_REAL
+      if (ch === TRAP && !(pp.p_flags & F_REAL)) {
+        showCh = FLOOR;
       }
 
+      const oldScreenChar = String.fromCharCode(backend.mvinch(y, x) & 0xff);
       if (oldScreenChar !== showCh) {
         backend.mvaddch(y, x, showCh.charCodeAt(0));
       }
     }
   }
+}
+
+/**
+ * pick_color: Random character for hallucination display.
+ */
+const halluChars = "!?])=/,:*ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+function pick_color(): string {
+  return halluChars[rnd(halluChars.length)];
+}
+
+/**
+ * isItemChar: Check if a character represents an item on the ground.
+ */
+function isItemChar(ch: string): boolean {
+  return ch === POTION || ch === SCROLL || ch === FOOD ||
+         ch === WEAPON || ch === ARMOR || ch === RING ||
+         ch === STICK || ch === AMULET || ch === GOLD;
 }
 
 /**
@@ -89,8 +138,8 @@ export function cansee(y: number, x: number): boolean {
 
   const playerRoom = state.player.t_room;
   if (playerRoom === null) {
-    // In a passage — can only see adjacent
-    return dist(y, x, state.player.t_pos.y, state.player.t_pos.x) <= 2;
+    // In a passage — can only see adjacent (dist < LAMPDIST)
+    return dist(y, x, state.player.t_pos.y, state.player.t_pos.x) < LAMPDIST;
   }
 
   // In a room
@@ -100,13 +149,13 @@ export function cansee(y: number, x: number): boolean {
     x >= playerRoom.r_pos.x &&
     x < playerRoom.r_pos.x + playerRoom.r_max.x
   ) {
-    // In same room
+    // In same room — lit room: can see everything
     if (!(playerRoom.r_flags & ISDARK)) return true;
-    // Dark room — can only see if close
-    return dist(y, x, state.player.t_pos.y, state.player.t_pos.x) < LAMPDIST * LAMPDIST + 1;
+    // Dark room — can only see within lamp distance
+    return dist(y, x, state.player.t_pos.y, state.player.t_pos.x) < LAMPDIST;
   }
 
-  return dist(y, x, state.player.t_pos.y, state.player.t_pos.x) < LAMPDIST * LAMPDIST + 1;
+  return dist(y, x, state.player.t_pos.y, state.player.t_pos.x) < LAMPDIST;
 }
 
 /**
@@ -115,9 +164,7 @@ export function cansee(y: number, x: number): boolean {
 export function see_monst(mp: Monster): boolean {
   if (state.player.t_flags & ISBLIND) return false;
   if (mp.t_flags & ISINVIS) {
-    // Can only see invisible if player has see-invisible ability
-    // (checked through CANSEE flag on player, not here)
-    return false;
+    if (!(state.player.t_flags & CANSEE)) return false;
   }
   return cansee(mp.t_pos.y, mp.t_pos.x);
 }
@@ -128,11 +175,8 @@ export function see_monst(mp: Monster): boolean {
 export function diag_ok(sp: Coord, ep: Coord): boolean {
   if (ep.x === sp.x || ep.y === sp.y) return true;
 
-  const ch1 = chat(sp.y, ep.x);
-  if (ch1 !== FLOOR && ch1 !== PASSAGE && ch1 !== DOOR) return false;
-
-  const ch2 = chat(ep.y, sp.x);
-  if (ch2 !== FLOOR && ch2 !== PASSAGE && ch2 !== DOOR) return false;
+  if (!step_ok(chat(sp.y, ep.x))) return false;
+  if (!step_ok(chat(ep.y, sp.x))) return false;
 
   return true;
 }

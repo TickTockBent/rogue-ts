@@ -33,8 +33,9 @@ const MAXTRIES = 10;
 export function new_level(): void {
   const backend = getBackend();
 
-  // Unhold when you go down
+  // Unhold when you go down, clear SEEMONST
   state.player.t_flags &= ~ISHELD;
+  state.player.t_flags &= ~SEEMONST;
 
   if (state.level > state.max_level) {
     state.max_level = state.level;

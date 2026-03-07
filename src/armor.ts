@@ -79,10 +79,12 @@ export async function waste_time(): Promise<void> {
   const { do_daemons, do_fuses } = await import("./daemon.js");
   const { look } = await import("./misc.js");
   const { status } = await import("./io.js");
+  const { BEFORE: B, AFTER: A } = await import("./globals.js");
 
-  const AFTER = 2;
-  await do_daemons(AFTER);
-  await do_fuses(AFTER);
+  await do_daemons(B);
+  await do_fuses(B);
+  await do_daemons(A);
+  await do_fuses(A);
   if (state.running) state.after = false;
   await look(false);
   await status();

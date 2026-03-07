@@ -73,7 +73,6 @@ export async function do_zap(): Promise<void> {
     case WS_POLYMORPH:
       await ws_effect_on_monster(obj, (tp) => {
         const newType = randmonster(false);
-        const oldType = tp.t_type;
         const monsterIndex = newType.charCodeAt(0) - "A".charCodeAt(0);
         const mp = monsterTemplates[monsterIndex];
         tp.t_type = newType;
@@ -84,7 +83,8 @@ export async function do_zap(): Promise<void> {
         tp.t_stats.s_lvl = mp.m_stats.s_lvl;
         tp.t_stats.s_arm = mp.m_stats.s_arm;
         tp.t_stats.s_exp = mp.m_stats.s_exp;
-        tp.t_flags = mp.m_flags;
+        // C original: tp->t_flags = mp->m_flags | ISRUN
+        tp.t_flags = mp.m_flags | ISRUN;
         if (see_monst(tp)) {
           const backend = getBackend();
           backend.mvaddch(tp.t_pos.y, tp.t_pos.x, newType.charCodeAt(0));
@@ -94,7 +94,7 @@ export async function do_zap(): Promise<void> {
       break;
 
     case WS_MISSILE:
-      await bolt(obj);
+      await missile(obj);
       break;
 
     case WS_HASTE_M:
@@ -117,24 +117,39 @@ export async function do_zap(): Promise<void> {
       break;
 
     case WS_DRAIN:
-      // Drain life — damages monsters proportional to player HP
+      // Drain life — C original: halve player HP, then divide among room monsters
       {
         if (state.player.t_stats.s_hpt < 2) {
           await msg("you are too weak to use it");
           break;
         }
-        state.player.t_stats.s_hpt = Math.floor(state.player.t_stats.s_hpt / 2);
-        // Damage all monsters in line of sight
+        // Count monsters in the same room
+        const playerRoom = state.player.t_room;
+        let cnt = 0;
         let monsterItem: Thing | null = state.mlist;
         while (monsterItem !== null) {
-          if (monsterItem._kind === "monster" && see_monst(monsterItem)) {
-            monsterItem.t_stats.s_hpt -= state.player.t_stats.s_hpt;
+          if (monsterItem._kind === "monster" && monsterItem.t_room === playerRoom) {
+            cnt++;
+          }
+          monsterItem = monsterItem.l_next;
+        }
+        if (cnt === 0) {
+          await msg("you have a tingling feeling");
+          break;
+        }
+        state.player.t_stats.s_hpt = Math.floor(state.player.t_stats.s_hpt / 2);
+        const drain = Math.floor(state.player.t_stats.s_hpt / cnt);
+        monsterItem = state.mlist;
+        while (monsterItem !== null) {
+          const next = monsterItem.l_next;
+          if (monsterItem._kind === "monster" && monsterItem.t_room === playerRoom) {
+            monsterItem.t_stats.s_hpt -= drain;
             if (monsterItem.t_stats.s_hpt <= 0) {
               const { killed } = await import("./fight.js");
               await killed(monsterItem, true);
             }
           }
-          monsterItem = monsterItem.l_next;
+          monsterItem = next;
         }
       }
       break;
@@ -289,16 +304,14 @@ async function ws_effect_on_monster(
 }
 
 /**
- * bolt: Fire a bolt (lightning, fire, cold, or magic missile) in a direction.
+ * missile: Fire a magic missile using roll_em for damage.
+ * C original: creates a temporary Thing with "1x4" damage and uses fight system.
  */
-async function bolt(obj: GameObj): Promise<void> {
+async function missile(obj: GameObj): Promise<void> {
   let y = state.player.t_pos.y;
   let x = state.player.t_pos.x;
 
-  const boltName = ws_info[obj.o_which]?.oi_name || "bolt";
-
-  // Trace the bolt
-  for (let i = 0; i < BOLT_LENGTH; i++) {
+  for (;;) {
     y += state.delta.y;
     x += state.delta.x;
 
@@ -309,10 +322,91 @@ async function bolt(obj: GameObj): Promise<void> {
 
     const tp = moat(y, x);
     if (tp !== null && tp._kind === "monster") {
-      // Hit a monster
+      // C original: uses roll_em with "1x4" damage string
+      const damage = roll(1, 4);
+      if (!save_throw(3, tp)) {
+        tp.t_stats.s_hpt -= damage;
+        if (tp.t_stats.s_hpt <= 0) {
+          const { killed } = await import("./fight.js");
+          await killed(tp, true);
+        } else {
+          await msg("the missile hits the monster");
+        }
+      } else {
+        await msg("the missile misses the monster");
+      }
+      return;
+    }
+  }
+
+  await msg("the missile vanishes with a puff of smoke");
+}
+
+/**
+ * bolt: Fire a bolt (lightning, fire, cold) in a direction.
+ * C original: bolt bounces off walls by reversing direction.
+ */
+async function bolt(obj: GameObj): Promise<void> {
+  let y = state.player.t_pos.y;
+  let x = state.player.t_pos.x;
+  let dirY = state.delta.y;
+  let dirX = state.delta.x;
+  let bounced = false;
+
+  const boltName = ws_info[obj.o_which]?.oi_name || "bolt";
+
+  for (let i = 0; i < BOLT_LENGTH; i++) {
+    y += dirY;
+    x += dirX;
+
+    if (y <= 0 || y >= NUMLINES - 1 || x < 0 || x >= NUMCOLS) {
+      // Bounce off edge
+      if (!bounced) {
+        bounced = true;
+        dirY = -dirY;
+        dirX = -dirX;
+        y += dirY;
+        x += dirX;
+        continue;
+      }
+      break;
+    }
+
+    const ch = chat(y, x);
+    if (ch === " " || ch === "|" || ch === "-") {
+      // Bounce off wall
+      if (!bounced) {
+        bounced = true;
+        dirY = -dirY;
+        dirX = -dirX;
+        y += dirY;
+        x += dirX;
+        continue;
+      }
+      break;
+    }
+
+    // Check if bolt hits the player (bounced bolt)
+    if (y === state.player.t_pos.y && x === state.player.t_pos.x) {
+      const damage = roll(6, 6);
+      if (!save_throw(3, state.player as any)) {
+        state.player.t_stats.s_hpt -= damage;
+        await msg("your own bolt of %s hits you", boltName);
+        if (state.player.t_stats.s_hpt <= 0) {
+          const { death } = await import("./rip.js");
+          await death("b");
+        }
+      } else {
+        await msg("your bolt of %s whizzes by you", boltName);
+      }
+      return;
+    }
+
+    const tp = moat(y, x);
+    if (tp !== null && tp._kind === "monster") {
       const damage = roll(6, 6);
 
-      if (!save_throw(3, tp)) { // VS_MAGIC
+      if (!save_throw(3, tp)) {
         tp.t_stats.s_hpt -= damage;
         if (tp.t_stats.s_hpt <= 0) {
           const { killed } = await import("./fight.js");
@@ -327,5 +421,6 @@ async function bolt(obj: GameObj): Promise<void> {
     }
   }
 
+  // Bolt fizzled without hitting anything
   await msg("the bolt of %s bounces off the wall", boltName);
 }

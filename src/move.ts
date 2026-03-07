@@ -8,13 +8,16 @@ import {
   state, NUMCOLS, NUMLINES,
   FLOOR, PASSAGE, DOOR, TRAP, STAIRS, PLAYER,
   ISHUH, ISLEVIT, ISHELD, ISBLIND, ISGONE,
-  F_PASS, F_REAL, F_PNUM,
+  ISWEARING, R_SUSTSTR, R_SUSTARM,
+  SLEEPTIME, BEARTIME,
+  F_PASS, F_REAL, F_PNUM, F_TMASK,
   INDEX, chat, setCh, flat, setFlat, moat, winat,
-  T_DOOR, T_TELEP, ESCAPE,
+  T_DOOR, T_ARROW, T_SLEEP, T_BEAR, T_TELEP, T_DART, T_RUST, T_MYST,
+  ESCAPE,
 } from "./globals.js";
-import { rnd, ce } from "./util.js";
+import { rnd, ce, spread } from "./util.js";
 import { msg, step_ok, getBackend } from "./io.js";
-import { diag_ok, floor_at } from "./misc.js";
+import { diag_ok, floor_at, chg_str } from "./misc.js";
 import { enter_room, leave_room, find_floor, roomin } from "./rooms.js";
 
 /**
@@ -130,7 +133,7 @@ export async function do_move(dy: number, dx: number): Promise<void> {
     case STAIRS:
       state.seenstairs = true;
       state.running = false;
-      state.take = ch;
+      // Don't set state.take for stairs (no auto-pickup)
       doMoveStuff(nhY, nhX, fl);
       break;
 
@@ -178,45 +181,87 @@ function doMoveStuff(nhY: number, nhX: number, fl: number): void {
  * Simplified for Phase 6 milestone.
  */
 export async function be_trapped(tc: Coord): Promise<string> {
+  // Levitating players don't trigger traps
+  if (state.player.t_flags & ISLEVIT) return "";
+
   const fl = flat(tc.y, tc.x);
-  const trapType = fl & 0x07; // F_TMASK
+  const trapType = fl & F_TMASK;
 
   switch (trapType) {
-    case 0: // T_DOOR - trapdoor
-      await msg("you fell into a trap!");
+    case T_DOOR: // Trapdoor
       state.level++;
-      // new_level will be called by the game loop
+      state._newLevel = true;
+      await msg("you fell into a trap!");
       return String.fromCharCode(T_DOOR);
-    case 1: // T_ARROW
-      await msg("oh no! An arrow shot you");
-      state.player.t_stats.s_hpt -= roll(1, 6);
+    case T_ARROW: { // Arrow trap
+      const arrowDmg = roll(1, 6);
+      if (state.player.t_stats.s_hpt > arrowDmg) {
+        await msg("oh no! An arrow shot you");
+      } else {
+        await msg("an arrow killed you");
+      }
+      state.player.t_stats.s_hpt -= arrowDmg;
       break;
-    case 2: // T_SLEEP
+    }
+    case T_SLEEP: // Sleeping gas
       await msg("a strange white mist envelops you and you fall asleep");
-      state.no_command += rnd(10) + 4;
+      state.no_command += spread(SLEEPTIME);
+      if (state.no_command < 0) state.no_command = 0;
       break;
-    case 3: // T_BEAR
+    case T_BEAR: // Bear trap
+      state.no_move += spread(BEARTIME);
+      if (state.no_move < 0) state.no_move = 0;
       await msg("you are caught in a bear trap");
-      state.no_move += 2;
       break;
-    case 4: // T_TELEP
-      await msg("teleport!");
+    case T_TELEP: { // Teleport trap
+      const backend = getBackend();
+      // Erase hero from old position
+      backend.mvaddch(state.player.t_pos.y, state.player.t_pos.x,
+        floor_at().charCodeAt(0));
       // Teleport to random location
       find_floor(null, state.player.t_pos, false, true);
       enter_room(state.player.t_pos);
+      await msg("teleport!");
       return String.fromCharCode(T_TELEP);
-    case 5: // T_DART
+    }
+    case T_DART: { // Poison dart
+      const dartDmg = roll(1, 4);
+      state.player.t_stats.s_hpt -= dartDmg;
+      if (!ISWEARING(R_SUSTSTR) && !save_throw(0, state.player)) {
+        chg_str(-1);
+      }
       await msg("a small dart just hit you in the shoulder");
-      state.player.t_stats.s_hpt -= roll(1, 4);
       break;
-    case 6: // T_RUST
+    }
+    case T_RUST: // Rust trap
       await msg("a gush of water hits you on the head");
+      rust_armor();
       break;
-    case 7: // T_MYST
+    case T_MYST: // Mysterious trap
       await msg("you hear a strange humming");
       break;
   }
   return "";
+}
+
+/**
+ * rust_armor: Rust the player's armor from trap.
+ */
+function rust_armor(): void {
+  if (state.cur_armor === null || state.cur_armor._kind !== "object") return;
+  if (ISWEARING(R_SUSTARM)) return;
+  const armor = state.cur_armor;
+  if (armor.o_flags & 0o40) return; // ISPROT
+  armor.o_arm++;
+  if (armor.o_arm > 9) armor.o_arm = 9;
+}
+
+/**
+ * save_throw: Check for a saving throw (local for traps).
+ */
+function save_throw(which: number, tp: { t_stats: { s_lvl: number } }): boolean {
+  const need = 14 - Math.floor(tp.t_stats.s_lvl / 2);
+  return roll(1, 20) >= need - which;
 }
 
 function roll(number: number, sides: number): number {

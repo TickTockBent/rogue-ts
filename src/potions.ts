@@ -10,12 +10,13 @@ import {
   P_CONFUSE, P_LSD, P_POISON, P_STRENGTH, P_SEEINVIS,
   P_HEALING, P_MFIND, P_TFIND, P_RAISE, P_XHEAL,
   P_HASTE, P_RESTORE, P_BLIND, P_LEVIT,
-  ISHUH, ISHASTE, ISBLIND, ISLEVIT, ISINVIS, SEEMONST, ISHALU,
-  HUHDURATION, SEEDURATION,
+  ISHUH, ISHASTE, ISBLIND, ISLEVIT, ISINVIS, SEEMONST, ISHALU, CANSEE,
+  HUHDURATION, SEEDURATION, AFTER,
   ISWEARING, R_SUSTSTR,
   moat, NUMLINES, NUMCOLS,
+  e_levels,
 } from "./globals.js";
-import { rnd } from "./util.js";
+import { rnd, spread } from "./util.js";
 import { msg, getBackend, status } from "./io.js";
 import { get_item } from "./pack.js";
 import { inv_name } from "./things.js";
@@ -41,7 +42,7 @@ export async function quaff(): Promise<void> {
   switch (obj.o_which) {
     case P_CONFUSE:
       state.player.t_flags |= ISHUH;
-      fuse(unconfuse, 0, rnd(8) + HUHDURATION, 2);
+      fuse(unconfuse, 0, spread(HUHDURATION), AFTER);
       if (!pot_info[P_CONFUSE].oi_know) {
         await msg("wait, what's going on here. Huh? What? Who?");
       } else {
@@ -51,7 +52,7 @@ export async function quaff(): Promise<void> {
 
     case P_LSD:
       state.player.t_flags |= ISHALU;
-      fuse(unsee, 0, rnd(12) + SEEDURATION, 2);
+      fuse(unsee, 0, spread(SEEDURATION), AFTER);
       if (!pot_info[P_LSD].oi_know) {
         await msg("oh, wow!  Everything seems so cosmic!");
       } else {
@@ -74,15 +75,15 @@ export async function quaff(): Promise<void> {
       break;
 
     case P_SEEINVIS:
+      // Set CANSEE flag on the player
+      state.player.t_flags |= CANSEE;
       // Show invisible monsters
-      if (state.player.t_flags & ISBLIND) {
-        // Can't see invisible if blind
-      } else {
+      if (!(state.player.t_flags & ISBLIND)) {
         let monsterItem: Thing | null = state.mlist;
+        const backend = getBackend();
         while (monsterItem !== null) {
           if (monsterItem._kind === "monster" && (monsterItem.t_flags & ISINVIS)) {
             if (see_monst(monsterItem)) {
-              const backend = getBackend();
               backend.mvaddch(monsterItem.t_pos.y, monsterItem.t_pos.x,
                 monsterItem.t_type.charCodeAt(0));
             }
@@ -90,7 +91,7 @@ export async function quaff(): Promise<void> {
           monsterItem = monsterItem.l_next;
         }
       }
-      fuse(unsee, 0, SEEDURATION, 2);
+      fuse(unsee, 0, spread(SEEDURATION), AFTER);
       await msg("this potion tastes like %s juice", state.fruit);
       break;
 
@@ -123,7 +124,7 @@ export async function quaff(): Promise<void> {
         if (found) {
           await msg("you sense the presence of monsters");
           state.player.t_flags |= SEEMONST;
-          fuse(unsee, 0, SEEDURATION, 2);
+          fuse(unsee, 0, spread(SEEDURATION), AFTER);
         } else {
           await msg("you have a strange feeling for a moment, then it passes");
         }
@@ -152,16 +153,23 @@ export async function quaff(): Promise<void> {
       }
       break;
 
-    case P_RAISE:
+    case P_RAISE: {
       await msg("you suddenly feel much more skillful");
-      state.player.t_stats.s_exp = state.player.t_stats.s_lvl * 10 + 1; // Force level up threshold
+      // C original: set exp to current level threshold + 1
+      const lvl = state.player.t_stats.s_lvl - 1;
+      state.player.t_stats.s_exp = (lvl < e_levels.length && e_levels[lvl] !== 0)
+        ? e_levels[lvl] + 1
+        : state.player.t_stats.s_exp + 1;
       await raise_level();
       break;
+    }
 
     case P_XHEAL:
       state.player.t_stats.s_hpt += roll(state.player.t_stats.s_lvl, 8);
       if (state.player.t_stats.s_hpt > state.player.t_stats.s_maxhp) {
-        state.player.t_stats.s_maxhp = state.player.t_stats.s_hpt;
+        // C original: raise maxhp by 1, but clamp hpt to new maxhp
+        state.player.t_stats.s_maxhp = ++state.player.t_stats.s_maxhp;
+        state.player.t_stats.s_hpt = state.player.t_stats.s_maxhp;
       }
       if (state.player.t_flags & ISHUH) {
         state.player.t_flags &= ~ISHUH;
@@ -178,7 +186,7 @@ export async function quaff(): Promise<void> {
         extinguish(nohaste);
       } else {
         state.player.t_flags |= ISHASTE;
-        fuse(nohaste, 0, rnd(4) + 4, 2);
+        fuse(nohaste, 0, rnd(4) + 4, AFTER);
         await msg("you feel yourself moving much faster");
       }
       break;
@@ -194,13 +202,13 @@ export async function quaff(): Promise<void> {
 
     case P_BLIND:
       state.player.t_flags |= ISBLIND;
-      fuse(sight, 0, rnd(400) + 450, 2);
+      fuse(sight, 0, spread(SEEDURATION), AFTER);
       await msg("a cloak of darkness falls around you");
       break;
 
     case P_LEVIT:
       state.player.t_flags |= ISLEVIT;
-      fuse(land, 0, rnd(20) + 20, 2);
+      fuse(land, 0, spread(SEEDURATION), AFTER);
       await msg("you start to float in the air");
       break;
   }

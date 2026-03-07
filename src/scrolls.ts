@@ -58,25 +58,28 @@ export async function read_scroll(): Promise<void> {
       scr_info[S_MAP].oi_know = true;
       {
         const backend = getBackend();
-        for (const rp of state.rooms) {
-          if (rp.r_flags & ISGONE) continue;
-          rp.r_flags &= ~ISDARK;
-          for (let y = rp.r_pos.y; y < rp.r_pos.y + rp.r_max.y; y++) {
-            for (let x = rp.r_pos.x; x < rp.r_pos.x + rp.r_max.x; x++) {
-              if (y < 0 || y >= NUMLINES || x < 0 || x >= NUMCOLS) continue;
-              const pp = INDEX(y, x);
-              if (pp.p_ch === " ") continue;
-              // Reveal the character
-              const ch = pp.p_ch;
-              if (!(pp.p_flags & F_REAL)) {
-                pp.p_flags |= F_REAL;
-                if (ch === " ") {
-                  pp.p_ch = DOOR;
-                }
+        // Reveal all places on the map
+        for (let y = 1; y < NUMLINES - 1; y++) {
+          for (let x = 0; x < NUMCOLS; x++) {
+            const pp = INDEX(y, x);
+            // Reveal secret doors and hidden traps
+            if (!(pp.p_flags & F_REAL)) {
+              pp.p_flags |= F_REAL;
+              if (pp.p_flags & F_PASS) {
+                pp.p_ch = PASSAGE;
+              } else {
+                pp.p_ch = DOOR;
               }
-              if (ch !== " ") {
-                backend.mvaddch(y, x, ch.charCodeAt(0));
-              }
+            }
+            // Reveal traps
+            if (pp.p_ch === FLOOR && !(pp.p_flags & F_REAL)) {
+              pp.p_ch = TRAP;
+              pp.p_flags |= F_REAL;
+            }
+            // Show everything except space
+            const ch = pp.p_ch;
+            if (ch !== " ") {
+              backend.mvaddch(y, x, ch.charCodeAt(0));
             }
           }
         }
@@ -85,18 +88,26 @@ export async function read_scroll(): Promise<void> {
       break;
 
     case S_HOLD:
-      // Hold monsters — freeze all monsters in the room
+      // Hold monsters — freeze only monsters in the same room
       {
+        const playerRoom = state.player.t_room;
         let monsterItem: Thing | null = state.mlist;
+        let held = false;
         while (monsterItem !== null) {
           if (monsterItem._kind === "monster") {
-            monsterItem.t_flags &= ~ISRUN;
-            monsterItem.t_flags |= ISHELD;
+            // Only affect monsters in the same room
+            if (playerRoom !== null && monsterItem.t_room === playerRoom) {
+              monsterItem.t_flags &= ~ISRUN;
+              monsterItem.t_flags |= ISHELD;
+              held = true;
+            }
           }
           monsterItem = monsterItem.l_next;
         }
+        if (!held) {
+          await msg("you feel a strange sense of loss");
+        }
       }
-      await msg("you feel a strange sense of loss");
       break;
 
     case S_SLEEP:

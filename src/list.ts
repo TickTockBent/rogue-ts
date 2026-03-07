@@ -73,7 +73,7 @@ export function new_item(): GameObj {
     o_packch: "",
     o_damage: "0x0",
     o_hurldmg: "0x0",
-    o_count: 0,
+    o_count: 1,
     o_which: 0,
     o_hplus: 0,
     o_dplus: 0,

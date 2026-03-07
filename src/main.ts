@@ -6,7 +6,7 @@
 import type { CursesBackend } from "./curses.js";
 import type { RogueOptions, RogueResult } from "./types.js";
 import { RogueExit } from "./types.js";
-import { state, resetState, NUMLINES, NUMCOLS } from "./globals.js";
+import { state, resetState, NUMLINES, NUMCOLS, BEFORE, AFTER, ISHASTE } from "./globals.js";
 import { setRNGSeed, rnd } from "./util.js";
 import { setBackend, resetIOState } from "./io.js";
 import {
@@ -25,7 +25,7 @@ import { land } from "./potions.js";
 import { status } from "./io.js";
 import { registerDaemonFunc, saveGame, restoreGame } from "./save.js";
 
-const AFTER = 2; // daemon type flag
+// BEFORE and AFTER imported from globals.js
 
 /**
  * registerAllDaemons: Register all daemon/fuse callbacks for save/restore.
@@ -89,7 +89,7 @@ export async function startRogue(
   init_materials();
 
   // Initialize the player
-  init_player();
+  await init_player();
 
   // Start daemons
   start_daemon(doctor, 0, AFTER);
@@ -221,12 +221,20 @@ async function playit(): Promise<void> {
       new_level();
     }
 
-    // Execute a player command
-    const monstersTurn = await command();
+    // Run BEFORE daemons and fuses
+    await do_daemons(BEFORE);
+    await do_fuses(BEFORE);
+
+    // C original: ISHASTE gives the player a double turn
+    const ntimes = (state.player.t_flags & ISHASTE) ? 2 : 1;
+    let monstersTurn = false;
+    for (let i = 0; i < ntimes && state.playing && !state._newLevel; i++) {
+      monstersTurn = await command();
+    }
 
     // If monsters get a turn
     if (monstersTurn) {
-      // Run daemons and fuses
+      // Run AFTER daemons and fuses
       await do_daemons(AFTER);
       await do_fuses(AFTER);
 

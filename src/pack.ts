@@ -7,7 +7,8 @@ import type { Thing, GameObj, Coord } from "./types.js";
 import {
   state, MAXPACK,
   GOLD, FOOD, POTION, SCROLL, WEAPON, ARMOR, RING, STICK, AMULET,
-  ISMANY, ISCURSED,
+  ISMANY, ISCURSED, ISFOUND, ISMULT,
+  S_SCARE, scr_info,
   F_DROPPED,
   ESCAPE, FLOOR, PASSAGE, CALLABLE, R_OR_S,
   HUNGERTIME, STOMACHSIZE,
@@ -36,11 +37,25 @@ export async function add_pack(obj: GameObj, silent: boolean): Promise<void> {
   }
 
   // Check if we can merge with existing items
+  // C original: ISMANY (thrown weapons) merge by o_group, ISMULT (potions/scrolls/food) merge by o_which
   if (obj.o_flags & ISMANY) {
     let existing = state.player.t_pack;
     while (existing !== null) {
       if (existing._kind === "object" && existing.o_type === obj.o_type &&
           existing.o_which === obj.o_which && existing.o_group === obj.o_group) {
+        existing.o_count += obj.o_count;
+        if (!silent) {
+          await msg("%s (%s)", inv_name(existing, false), existing.o_packch);
+        }
+        return;
+      }
+      existing = existing.l_next;
+    }
+  } else if (ISMULT(obj.o_type)) {
+    let existing = state.player.t_pack;
+    while (existing !== null) {
+      if (existing._kind === "object" && existing.o_type === obj.o_type &&
+          existing.o_which === obj.o_which) {
         existing.o_count += obj.o_count;
         if (!silent) {
           await msg("%s (%s)", inv_name(existing, false), existing.o_packch);
@@ -84,6 +99,16 @@ export async function pick_up(ch: string): Promise<void> {
   const obj = find_obj(heroPos.y, heroPos.x);
   if (obj === null || obj._kind !== "object") {
     await msg("that's funny, it seems to have disappeared");
+    return;
+  }
+
+  // C original: scare monster scroll crumbles when picked up
+  if (obj.o_type === SCROLL.charCodeAt(0) && obj.o_which === S_SCARE) {
+    const lvlHead = { head: state.lvl_obj };
+    _detach(lvlHead, obj);
+    state.lvl_obj = lvlHead.head;
+    setCh(heroPos.y, heroPos.x, (flat(heroPos.y, heroPos.x) & F_DROPPED) ? " " : ".");
+    await msg("the scroll turns to dust as you pick it up");
     return;
   }
 
@@ -272,6 +297,8 @@ export async function dropcheck(obj: GameObj): Promise<boolean> {
  * fallpos: Find an adjacent empty position for a dropped/thrown item.
  */
 export function fallpos(pos: Coord, newpos: Coord): boolean {
+  // C original: collect all valid spots, pick one randomly
+  const spots: Coord[] = [];
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
       const ny = pos.y + dy;
@@ -280,13 +307,15 @@ export function fallpos(pos: Coord, newpos: Coord): boolean {
       if (ny === state.player.t_pos.y && nx === state.player.t_pos.x) continue;
       const ch = chat(ny, nx);
       if ((ch === FLOOR || ch === PASSAGE) && moat(ny, nx) === null) {
-        newpos.y = ny;
-        newpos.x = nx;
-        return true;
+        spots.push({ y: ny, x: nx });
       }
     }
   }
-  return false;
+  if (spots.length === 0) return false;
+  const pick = spots[rnd(spots.length)];
+  newpos.y = pick.y;
+  newpos.x = pick.x;
+  return true;
 }
 
 /**
@@ -314,6 +343,7 @@ export async function drop(): Promise<void> {
   const typeCh = String.fromCharCode(droppedObj.o_type);
   setCh(heroPos.y, heroPos.x, typeCh);
   setFlat(heroPos.y, heroPos.x, flat(heroPos.y, heroPos.x) | F_DROPPED);
+  droppedObj.o_flags |= ISFOUND;
 
   if (droppedObj.o_type === AMULET.charCodeAt(0)) {
     state.amulet = false;
