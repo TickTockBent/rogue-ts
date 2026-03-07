@@ -111,6 +111,11 @@ export async function look(wakeup: boolean): Promise<void> {
       }
     }
   }
+
+  // C original: draw player at hero position after the 3x3 scan
+  if (!state.running || !state.jump) {
+    backend.mvaddch(heroPos.y, heroPos.x, PLAYER.charCodeAt(0));
+  }
 }
 
 /**
