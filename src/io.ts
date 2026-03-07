@@ -6,7 +6,7 @@
  */
 
 import type { CursesBackend } from "./curses.js";
-import { state, NUMCOLS, STATLINE, ESCAPE } from "./globals.js";
+import { state, NUMLINES, NUMCOLS, STATLINE, ESCAPE } from "./globals.js";
 import { sprintf } from "./util.js";
 
 // Module-level reference to the curses backend, set during init
@@ -253,18 +253,28 @@ export async function status(): Promise<void> {
  * show_win: Display a window and wait before returning.
  */
 export async function show_win(message: string): Promise<void> {
-  const win = state.hw;
-  if (win === null) return;
-
-  backend.wmove(win, 0, 0);
-  backend.waddstr(win, message);
-  backend.touchwin(win);
-  backend.wmove(win, state.player.t_pos.y, state.player.t_pos.x);
-  backend.wrefresh(win);
-  await wait_for(" ");
-  if (state.stdscr !== null) {
-    backend.touchwin(state.stdscr);
+  // Save the current screen so we can restore after the overlay
+  const savedScreen: number[][] = [];
+  for (let y = 0; y < NUMLINES; y++) {
+    savedScreen[y] = [];
+    for (let x = 0; x < NUMCOLS; x++) {
+      savedScreen[y][x] = backend.mvinch(y, x);
+    }
   }
+
+  backend.clear();
+  backend.mvaddstr(0, 0, message);
+  backend.move(state.player.t_pos.y, state.player.t_pos.x);
+  backend.refresh();
+  await wait_for(" ");
+
+  // Restore the screen
+  for (let y = 0; y < NUMLINES; y++) {
+    for (let x = 0; x < NUMCOLS; x++) {
+      backend.mvaddch(y, x, savedScreen[y][x] & 0xff);
+    }
+  }
+  backend.refresh();
 }
 
 /**
