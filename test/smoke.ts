@@ -660,6 +660,21 @@ async function testSaveRestoreState(): Promise<void> {
   );
 }
 
+// ─── Test: Help then continue playing ────────────────
+
+async function testHelpThenPlay(): Promise<void> {
+  console.log("\n[Test: Help Then Play]");
+
+  const backend = new MockBackend();
+  // Press ? for help, 3 spaces to dismiss all pages, then movement commands, then save
+  backend.queueInput("?", " ", " ", " ", ".", "j", ".", "S");
+
+  const result = await withTimeout(startRogue(backend, { seed: 666 }), 5000);
+
+  assert(result.outcome === "save", `game saved after help+play (got ${result.outcome})`);
+  assert(result.level === 1, `still on level 1 (got ${result.level})`);
+}
+
 // ─── Main ────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -674,6 +689,7 @@ async function main(): Promise<void> {
   await testInventory();
   await testVersion();
   await testHelpScreen();
+  await testHelpThenPlay();
   await testSearch();
   await testDescendStairs();
   await testCombatSystem();
