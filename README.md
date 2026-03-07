@@ -10,10 +10,10 @@ A faithful TypeScript port of **Rogue 5.4.4**, the 1980 dungeon crawler that sta
                    /     PEACE      \
                   /                  \
                   |    adventurer    |
-                  |     142 Au      |
-                  |   killed by a   |
-                  |    hobgoblin    |
-                  |   on level 3    |
+                  |     142 Au       |
+                  |   killed by a    |
+                  |    hobgoblin     |
+                  |   on level 3     |
                   |                  |
                  *|     *     *      |*
          ________)|//\//\///\//\//\//|(________
