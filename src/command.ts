@@ -36,35 +36,6 @@ import { ring_on, ring_off } from "./rings.js";
 import { do_zap } from "./sticks.js";
 import { inv_name } from "./things.js";
 
-/**
- * saveScreenBuffer / restoreScreenBuffer: Capture and restore the full
- * stdscr contents. Used by overlay screens (help, discovered, options)
- * so the dungeon map is restored after the overlay is dismissed.
- * This is necessary because most CursesBackend implementations don't
- * maintain an internal stdscr buffer that touchwin/clearok can repaint from.
- */
-function saveScreenBuffer(): number[][] {
-  const backend = getBackend();
-  const buf: number[][] = [];
-  for (let y = 0; y < NUMLINES; y++) {
-    buf[y] = [];
-    for (let x = 0; x < NUMCOLS; x++) {
-      buf[y][x] = backend.mvinch(y, x);
-    }
-  }
-  return buf;
-}
-
-function restoreScreenBuffer(buf: number[][]): void {
-  const backend = getBackend();
-  for (let y = 0; y < NUMLINES; y++) {
-    for (let x = 0; x < NUMCOLS; x++) {
-      backend.mvaddch(y, x, buf[y][x] & 0xff);
-    }
-  }
-  backend.refresh();
-}
-
 // Direction deltas for movement keys
 const dirMap: Record<string, [number, number]> = {
   h: [0, -1],
@@ -672,9 +643,10 @@ async function readName(): Promise<string> {
  */
 async function help(): Promise<void> {
   const backend = getBackend();
-  const savedScreen = saveScreenBuffer();
+  const hw = state.hw;
+  if (hw === null) return;
 
-  backend.clear();
+  backend.wclear(hw);
   let row = 0;
   for (const entry of helpstr) {
     if (!entry.h_print) continue;
@@ -694,22 +666,26 @@ async function help(): Promise<void> {
       line = keyStr + prefix + " " + desc;
     }
 
-    backend.mvaddstr(row, 0, line);
+    backend.mvwaddstr(hw, row, 0, line);
     row++;
 
     if (row >= NUMLINES - 1) {
-      backend.mvaddstr(NUMLINES - 1, 0, "--Press space to continue--");
-      backend.refresh();
+      backend.mvwaddstr(hw, NUMLINES - 1, 0, "--Press space to continue--");
+      backend.wrefresh(hw);
       await wait_for(" ");
-      backend.clear();
+      backend.wclear(hw);
       row = 0;
     }
   }
 
-  backend.mvaddstr(NUMLINES - 1, 0, "--Press space to continue--");
-  backend.refresh();
+  backend.mvwaddstr(hw, NUMLINES - 1, 0, "--Press space to continue--");
+  backend.wrefresh(hw);
   await wait_for(" ");
-  restoreScreenBuffer(savedScreen);
+  if (state.stdscr !== null) {
+    backend.clearok(state.stdscr, true);
+    backend.touchwin(state.stdscr);
+  }
+  backend.refresh();
 }
 
 /**
@@ -717,6 +693,7 @@ async function help(): Promise<void> {
  */
 async function discovered(): Promise<void> {
   const backend = getBackend();
+  const hw = state.hw;
   const lines: string[] = [];
 
   // Potions
@@ -750,24 +727,28 @@ async function discovered(): Promise<void> {
     return;
   }
 
-  const savedScreen = saveScreenBuffer();
-  backend.clear();
+  if (hw === null) return;
+  backend.wclear(hw);
   let row = 0;
   for (const line of lines) {
-    backend.mvaddstr(row, 0, line);
+    backend.mvwaddstr(hw, row, 0, line);
     row++;
     if (row >= NUMLINES - 1) {
-      backend.mvaddstr(NUMLINES - 1, 0, "--Press space to continue--");
-      backend.refresh();
+      backend.mvwaddstr(hw, NUMLINES - 1, 0, "--Press space to continue--");
+      backend.wrefresh(hw);
       await wait_for(" ");
-      backend.clear();
+      backend.wclear(hw);
       row = 0;
     }
   }
-  backend.mvaddstr(NUMLINES - 1, 0, "--Press space to continue--");
-  backend.refresh();
+  backend.mvwaddstr(hw, NUMLINES - 1, 0, "--Press space to continue--");
+  backend.wrefresh(hw);
   await wait_for(" ");
-  restoreScreenBuffer(savedScreen);
+  if (state.stdscr !== null) {
+    backend.clearok(state.stdscr, true);
+    backend.touchwin(state.stdscr);
+  }
+  backend.refresh();
 }
 
 /**
@@ -845,18 +826,23 @@ async function identify_trap(): Promise<void> {
  */
 async function set_options(): Promise<void> {
   const backend = getBackend();
-  const savedScreen = saveScreenBuffer();
+  const hw = state.hw;
+  if (hw === null) return;
 
-  backend.clear();
-  backend.mvaddstr(0, 0, "Game options (press space to continue):");
-  backend.mvaddstr(2, 0, `terse:    ${state.terse ? "on" : "off"}`);
-  backend.mvaddstr(3, 0, `fruit:    ${state.fruit}`);
-  backend.mvaddstr(4, 0, `name:     ${state.whoami}`);
-  backend.mvaddstr(5, 0, `jump:     ${state.jump ? "on" : "off"}`);
-  backend.mvaddstr(NUMLINES - 1, 0, "--Press space to continue--");
-  backend.refresh();
+  backend.wclear(hw);
+  backend.mvwaddstr(hw, 0, 0, "Game options (press space to continue):");
+  backend.mvwaddstr(hw, 2, 0, `terse:    ${state.terse ? "on" : "off"}`);
+  backend.mvwaddstr(hw, 3, 0, `fruit:    ${state.fruit}`);
+  backend.mvwaddstr(hw, 4, 0, `name:     ${state.whoami}`);
+  backend.mvwaddstr(hw, 5, 0, `jump:     ${state.jump ? "on" : "off"}`);
+  backend.mvwaddstr(hw, NUMLINES - 1, 0, "--Press space to continue--");
+  backend.wrefresh(hw);
   await wait_for(" ");
-  restoreScreenBuffer(savedScreen);
+  if (state.stdscr !== null) {
+    backend.clearok(state.stdscr, true);
+    backend.touchwin(state.stdscr);
+  }
+  backend.refresh();
 }
 
 /**
