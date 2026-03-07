@@ -122,11 +122,18 @@ export function do_rooms(): void {
         rp.r_max.y--;
       }
     } else {
+      let roomSizeAttempts = 0;
       do {
         rp.r_max.x = rnd(bsze.x - 4) + 4;
         rp.r_max.y = rnd(bsze.y - 4) + 4;
         rp.r_pos.x = top.x + rnd(bsze.x - rp.r_max.x);
         rp.r_pos.y = top.y + rnd(bsze.y - rp.r_max.y);
+        // Guard against infinite loop: when the room is too tall for
+        // its grid cell, rnd(bsze.y - r_max.y) can only produce 0,
+        // making r_pos.y permanently stuck at 0. Force y=1 as fallback.
+        if (++roomSizeAttempts > 100 && rp.r_pos.y === 0) {
+          rp.r_pos.y = 1;
+        }
       } while (rp.r_pos.y === 0);
     }
 

@@ -18,16 +18,17 @@ export function getRNGSeed(): number {
 }
 
 /**
- * Linear congruential RNG matching the original Rogue.
- * Uses Math.imul to avoid JS precision loss on large multiplications.
+ * Linear congruential RNG matching the original Rogue 5.4.4.
+ * From extern.h: #define RN (((seed = seed*11109+13849) >> 16) & 0xffff)
+ * Uses 32-bit integer math with high-bit extraction for quality output.
  */
 export function RN(): number {
-  seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
-  return seed;
+  seed = (Math.imul(seed, 11109) + 13849) | 0;
+  return (seed >> 16) & 0xffff;
 }
 
 export function rnd(range: number): number {
-  return range === 0 ? 0 : Math.abs(RN()) % range;
+  return range === 0 ? 0 : RN() % range;
 }
 
 export function roll(number: number, sides: number): number {
