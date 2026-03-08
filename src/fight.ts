@@ -14,7 +14,7 @@ import {
   ISCURSED, ISPROT,
   moat, setMoat,
 } from "./globals.js";
-import { rnd, on } from "./util.js";
+import { rnd } from "./util.js";
 import { msg, addmsg, endmsg, getBackend } from "./io.js";
 import { _detach } from "./list.js";
 import { set_mname, see_monst, check_level, chg_str } from "./misc.js";
