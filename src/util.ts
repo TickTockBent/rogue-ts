@@ -57,18 +57,6 @@ export function ce(a: Coord, b: Coord): boolean {
   return a.x === b.x && a.y === b.y;
 }
 
-export function on(thing: { t_flags?: number; o_flags?: number; flags?: number }, flag: number): boolean {
-  const flags = (thing as { t_flags?: number }).t_flags
-    ?? (thing as { o_flags?: number }).o_flags
-    ?? (thing as { flags?: number }).flags
-    ?? 0;
-  return (flags & flag) !== 0;
-}
-
-export function off(thing: { t_flags?: number; o_flags?: number; flags?: number }, flag: number): boolean {
-  return !on(thing, flag);
-}
-
 export function isMonster(thing: Thing): thing is import("./types.js").Monster {
   return thing._kind === "monster";
 }
